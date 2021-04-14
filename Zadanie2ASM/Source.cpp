@@ -1,18 +1,20 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <memory>
 using namespace std;
 
 
 class CommandObject final {
 public:
 	CommandObject(string command, vector<string> arguments,
-		string output_file_name, string input_file_name) {
+		string output_file_name, string input_file_name, std::shared_ptr<CommandObject> reciever) {
 		m_command = command;
 		for (size_t i = 0; i < arguments.size(); i++)
 			m_arguments.push_back(arguments[i]);
 		m_input_file_name = input_file_name;
 		m_output_file_name = output_file_name;
+		m_reciever = reciever;
 	}
 
 private:
@@ -20,6 +22,7 @@ private:
 	vector<string> m_arguments;
 	string m_input_file_name;
 	string m_output_file_name;
+	std::shared_ptr<CommandObject> m_reciever;
 
 	friend std::ostream& operator<<(std::ostream& lhs, const CommandObject& rhs);
 };
@@ -33,6 +36,8 @@ std::ostream& operator<<(std::ostream& lhs, const CommandObject& rhs)
 	lhs << "\n";
 	lhs << "INPUT FILE: " << rhs.m_input_file_name << "\n";
 	lhs << "OUTPUT FILE: " << rhs.m_output_file_name << "\n";
+	if (rhs.m_reciever != nullptr)
+		lhs << "PIPE TO COMMAND : " << rhs.m_reciever.get()->m_command << "\n";
 	return lhs;
 }
 
@@ -45,6 +50,9 @@ vector<CommandObject> createCommandObjects(string input_line) {
 	string first_word = "", word = "" , input_file = "", output_file = "";
 	vector<string> other_words;
 	bool first_done = false, output_file_mode = false, input_file_mode = false, filename_ended = false;
+	std::shared_ptr<CommandObject> sharedObject = nullptr;
+
+
 
 	for (size_t i = 0; i < input_line.size(); i++) {
 		bool is_delimiter = false;
@@ -52,7 +60,7 @@ vector<CommandObject> createCommandObjects(string input_line) {
 			if (input_line[i] == delimiters[j])
 				is_delimiter = true;
 
-		if (!is_delimiter && input_line[i] != ';' && filename_ended) break;
+		if (!is_delimiter && input_line[i] != ';' && input_line[i] != '|' && filename_ended) break;
 
 		if (is_delimiter) {
 			if ((output_file_mode && !output_file.empty()) || (input_file_mode && !input_file.empty()))
@@ -97,6 +105,13 @@ vector<CommandObject> createCommandObjects(string input_line) {
 			other_objects = createCommandObjects(other_command);
 			break;
 		}
+		else if (input_line[i] == '|') {
+			string other_command = input_line.substr(i + 1);
+			other_objects = createCommandObjects(other_command);
+			sharedObject = make_shared<CommandObject>(other_objects[0]);
+			break;
+		}	
+
 		else if (input_line[i] == '>' && !output_file_mode && !input_file_mode) {
 			output_file_mode = true;
 		}
@@ -118,10 +133,11 @@ vector<CommandObject> createCommandObjects(string input_line) {
 		else
 			first_word = word;
 	}
-
-
-	CommandObject commandObject{ first_word,other_words,output_file,input_file};
-	result.push_back(commandObject);
+	
+	if (!first_word.empty()) {
+		CommandObject commandObject{ first_word,other_words,output_file,input_file,sharedObject };
+		result.push_back(commandObject);
+	}
 	for (size_t i = 0; i < other_objects.size(); i++)
 		result.push_back(other_objects[i]);
 
