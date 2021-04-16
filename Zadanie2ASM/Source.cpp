@@ -1,9 +1,110 @@
+#include <sys/wait.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
 #include <iostream>
 #include <string>
 #include <vector>
 #include <memory>
+
+#pragma warning(disable:4996)
 using namespace std;
 
+//functions from steppen brennan
+/*
+  Function Declarations for builtin shell commands:
+ */
+int shell_cd(char** args);
+int shell_help(char** args);
+int shell_exit(char** args);
+
+/*
+  List of builtin commands, followed by their corresponding functions.
+ */
+char* builtin_str[] = {
+  "cd",
+  "help",
+  "exit"
+};
+
+int (*builtin_func[]) (char**) = {
+  &shell_cd,
+  &shell_help,
+  &shell_exit
+};
+
+int shell_num_builtins() {
+	return sizeof(builtin_str) / sizeof(char*);
+}
+
+/*
+  Builtin function implementations ____________________________________________________________________________________
+*/
+
+/**
+   @brief Bultin command: change directory.
+   @param args List of args.  args[0] is "cd".  args[1] is the directory.
+   @return Always returns 1, to continue executing.
+ */
+int shell_cd(char** args)
+{
+	if (args[1] == NULL) {
+		fprintf(stderr, "shell: expected argument to \"cd\"\n");
+	}
+	else {
+		if (chdir(args[1]) != 0) {
+			perror("shell");
+		}
+	}
+	return 1;
+}
+
+/**
+   @brief Builtin command: print help.
+   @param args List of args.  Not examined.
+   @return Always returns 1, to continue executing.
+ */
+int shell_help(char** args)
+{
+	int i;
+	printf("Stephen Brennan's shell\n");
+	printf("Type program names and arguments, and hit enter.\n");
+	printf("The following are built in:\n");
+
+	for (i = 0; i < shell_num_builtins(); i++) {
+		printf("  %s\n", builtin_str[i]);
+	}
+
+	printf("Use the man command for information on other programs.\n");
+	return 1;
+}
+
+/**
+   @brief Builtin command: exit.
+   @param args List of args.  Not examined.
+   @return Always returns 0, to terminate execution.
+ */
+int shell_exit(char** args)
+{
+	return 0;
+}
+
+//_______________________________________________________________________________________________
+
+void print_arguments(char** arguments) {
+	int i = 0;
+	while (true) {
+		if (arguments[i] == nullptr) {
+			cout << i << ": " << "NULL" << "\n";
+			break;
+		}
+		cout << i << ": " << arguments[i] << "\n";
+		i++;
+	}
+
+}
 
 class CommandObject final {
 public:
@@ -17,7 +118,6 @@ public:
 		m_reciever = reciever;
 	}
 
-private:
 	string m_command;
 	vector<string> m_arguments;
 	string m_input_file_name;
@@ -25,7 +125,50 @@ private:
 	std::shared_ptr<CommandObject> m_reciever;
 
 	friend std::ostream& operator<<(std::ostream& lhs, const CommandObject& rhs);
+	
+	char* get_command_as_c() {
+		char* c_string = new char[m_command.length() + 1];
+		strcpy(c_string, m_command.c_str());
+		return c_string;
+	}
+
+	char** get_arguments_as_c() {
+		size_t array_size = m_arguments.size() + 2;
+		/*if (!m_input_file_name.empty())
+			array_size += 2;
+		if (!m_output_file_name.empty())
+			array_size += 2;*/
+		char** arguments = new char* [array_size];
+
+		size_t i = 0;
+		arguments[i] = new char[m_command.length() + 1];
+		strcpy(arguments[i], m_command.c_str());
+		for (i = 0; i < m_arguments.size(); i++) {
+			arguments[i+1] = new char[m_arguments[i].length() + 1];
+			strcpy(arguments[i+1], m_arguments[i].c_str());
+		}
+		i++;
+		/*if (!m_input_file_name.empty()) {
+			arguments[i] = new char[2];
+			strcpy(arguments[i], "<");
+			i++;
+			arguments[i] = new char[m_input_file_name.length() + 1];
+			strcpy(arguments[i], m_input_file_name.c_str());
+			i++;
+		}
+		if (!m_output_file_name.empty()) {
+			arguments[i] = new char[2];
+			strcpy(arguments[i], ">");
+			i++;
+			arguments[i] = new char[m_output_file_name.length() + 1];
+			strcpy(arguments[i], m_output_file_name.c_str());
+			i++;
+		}*/
+		arguments[i] = nullptr;
+		return arguments;
+	}
 };
+
 
 std::ostream& operator<<(std::ostream& lhs, const CommandObject& rhs)
 {
@@ -142,25 +285,82 @@ vector<CommandObject> createCommandObjects(string input_line) {
 		result.push_back(other_objects[i]);
 
 	return result;
-	}
+}
 
-	/*
-	// Returns first token 
-	char* token = strtok(str, "-");
-	string command;
-	vector<string> tokens;
-	while (token != NULL)
-	{
-		printf("%s\n", token);
-		token = strtok(NULL, " \t\r\n\a");
-	}*/
+
+bool execute_command(CommandObject command) {
+	int pid, wpid;
+	int status;
+	char* command_as_c = command.get_command_as_c();
+	char** arguments_as_c = command.get_arguments_as_c();
+
+
+	for (int i = 0; i < shell_num_builtins(); i++) {
+		if (strcmp(command_as_c, builtin_str[i]) == 0) {
+			return (*builtin_func[i])(arguments_as_c);
+		}
+	}
+	
+	pid = fork();
+	if (pid == 0) {
+		// Child process
+		if (execvp(command.get_command_as_c(), command.get_arguments_as_c()) == -1) {
+			perror("shell");
+		}
+		delete[] command_as_c;
+		while (true) {
+			if (arguments_as_c[i] == NULL)
+				break;
+			delete[] arguments_as_c[i];
+			i++;
+		}
+		delete[] arguments_as_c;
+		exit(-1);
+	}
+	else if (pid < 0) {
+		// Error forking
+		perror("shell");
+	}
+	else {
+		// Parent process
+		do {
+			wpid = waitpid(pid, &status, WUNTRACED);
+		} while (!WIFEXITED(status) && !WIFSIGNALED(status));
+	}
+	
+	delete[] command_as_c;
+	i = 0;
+	while (true) {
+		if (arguments_as_c[i] == NULL)
+			break;
+		delete[] arguments_as_c[i];
+		i++;
+	}
+	delete[] arguments_as_c;
+	return true;
+}
+
+bool execute_line(vector <CommandObject> commands) {
+	bool error = false;
+	for (size_t i = 0; i < commands.size(); i++) {
+		error = execute_command(commands[i]);
+		if (error)
+			return false;
+	}
+	return true;
+}
 
 int main(int argc, char* argv[]) {
-	string input_line;
-	vector<CommandObject> commands;
-	getline(std::cin, input_line);
-	commands = createCommandObjects(input_line);
-	for (size_t i = 0; i < commands.size(); i++)
-		cout << i << ":\n" << commands[i] << "\n";
+	cout << "Shell started\n";
+	bool exit = false;
+	while (!exit) {
+		string input_line;
+		vector<CommandObject> commands;
+		getline(std::cin, input_line);
+		commands = createCommandObjects(input_line);
+		exit = execute_line(commands);
+		//for (size_t i = 0; i < commands.size(); i++)
+			//cout << i << ":\n" << commands[i] << "\n";
+	}
 	return 0;
 }
