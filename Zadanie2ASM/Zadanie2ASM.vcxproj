@@ -19,10 +19,6 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="arguments.cpp" />
-    <ClCompile Include="client.cpp" />
-    <ClCompile Include="prompt.cpp" />
-    <ClCompile Include="server.cpp" />
     <ClCompile Include="Source.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

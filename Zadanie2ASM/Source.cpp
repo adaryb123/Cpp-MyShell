@@ -3,6 +3,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
+#include <pwd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <ctype.h>
+#include <sys/un.h>
 
 #include <iostream>
 #include <string>
@@ -12,7 +18,9 @@
 #pragma warning(disable:4996)
 using namespace std;
 
-//functions from steppen brennan
+
+/* Part 1: custom shell functions =======================================================================================================
+source: https://brennan.io/2015/01/16/write-a-shell-in-c/  */
 /*
   Function Declarations for builtin shell commands:
  */
@@ -23,7 +31,7 @@ int shell_exit(char** args);
 /*
   List of builtin commands, followed by their corresponding functions.
  */
-char* builtin_str[] = {
+string builtin_str[] = {
   "cd",
   "help",
   "exit"
@@ -40,7 +48,7 @@ int shell_num_builtins() {
 }
 
 /*
-  Builtin function implementations ____________________________________________________________________________________
+  Builtin function implementations 
 */
 
 /**
@@ -74,7 +82,7 @@ int shell_help(char** args)
 	printf("The following are built in:\n");
 
 	for (i = 0; i < shell_num_builtins(); i++) {
-		printf("  %s\n", builtin_str[i]);
+		cout << builtin_str[i] << "\n";
 	}
 
 	printf("Use the man command for information on other programs.\n");
@@ -91,7 +99,60 @@ int shell_exit(char** args)
 	return 0;
 }
 
-//_______________________________________________________________________________________________
+/* Part 2 - shell arguments given at start =====================================================================================================
+*/
+
+class ShellArguments final {
+public:
+	string mode = "";
+	string port = "";
+	string socket_path = "";
+};
+
+ShellArguments shell_arguments;
+
+
+bool init_arguments_object(int length, char* arguments[]) {
+	for (int i = 1; i < length; i++) {
+		if (string{ arguments[i] } == "-h") {
+			if (shell_arguments.mode != "")
+				return false;
+			shell_arguments.mode = "HELP";
+		}
+		else if (string{ arguments[i] } == "-c") {
+			if (shell_arguments.mode != "")
+				return false;
+			shell_arguments.mode = "CLIENT";
+		}
+		else if (string{ arguments[i] } == "-s") {
+			if (shell_arguments.mode != "")
+				return false;
+			shell_arguments.mode = "SERVER";
+		}
+		else if (string{ arguments[i] } == "-a") {
+			if (shell_arguments.mode != "")
+				return false;
+			shell_arguments.mode = "STANDALONE";
+		}
+		else if (string{ arguments[i] } == "-p") {
+			i++;
+			if (i < length && shell_arguments.port == "")
+				shell_arguments.port = string{ arguments[i] };
+			else
+				return false;
+		}
+		else if (string{ arguments[i] } == "-u") {
+			i++;
+			if (i < length && shell_arguments.socket_path == "")
+				shell_arguments.socket_path = string{ arguments[i] };
+			else
+				return false;
+		}
+		else
+			return false;
+	}
+	return true;
+}
 
 void print_arguments(char** arguments) {
 	int i = 0;
@@ -105,6 +166,30 @@ void print_arguments(char** arguments) {
 	}
 
 }
+
+/*Part 3 - my command prompt text ==============================================================================
+*/
+
+string make_prompt() {
+	time_t mytime = time(NULL);
+	char* time_str_c = ctime(&mytime);
+	time_str_c[strlen(time_str_c) - 1] = '\0';
+	string time_string{ time_str_c };
+	time_string = time_string.substr(10, 10);
+
+	struct passwd* p = getpwuid(getuid());  
+	string username{ p->pw_name };
+
+	char hostname[15];
+	gethostname(hostname, sizeof(hostname));  
+	string computer_name{ hostname };
+	string output = time_string + " " + username + "@" + hostname + "#";
+
+	return output;
+}
+
+/* Part 4 - CommandObject class, represents 1 line of command entered by user ================================================
+*/
 
 class CommandObject final {
 public:
@@ -287,20 +372,22 @@ vector<CommandObject> createCommandObjects(string input_line) {
 	return result;
 }
 
+/* Part 5 - command execution ========================================================================
+*/
 
 bool execute_command(CommandObject command) {
 	int pid, wpid;
 	int status;
 	char* command_as_c = command.get_command_as_c();
 	char** arguments_as_c = command.get_arguments_as_c();
+	int i = 0;
 
-
-	for (int i = 0; i < shell_num_builtins(); i++) {
-		if (strcmp(command_as_c, builtin_str[i]) == 0) {
+	for (i = 0; i < shell_num_builtins(); i++) {
+		if (command.m_command == builtin_str[i]) {
 			return (*builtin_func[i])(arguments_as_c);
 		}
 	}
-	
+	i = 0;
 	pid = fork();
 	if (pid == 0) {
 		// Child process
@@ -350,10 +437,109 @@ bool execute_line(vector <CommandObject> commands) {
 	return true;
 }
 
-int main(int argc, char* argv[]) {
-	cout << "Shell started\n";
+/* Part 6 - server mode ==================================================================================
+*/
+
+//server from classmate
+
+int launch_as_server() {
+	int i, s, ns, r;
+	fd_set rs;
+	char buff[64], msg[] = "server ready\n";
+	struct sockaddr_un ad;
+
+	memset(&ad, 0, sizeof(ad));
+	ad.sun_family = AF_LOCAL;
+	strcpy(ad.sun_path, "./sck");
+	s = socket(PF_LOCAL, SOCK_STREAM, 0);
+	if (s == -1)
+	{
+		perror("socket: ");
+		exit(2);
+	}
+
+	unlink("./sck");
+	bind(s, (struct sockaddr*)&ad, sizeof(ad));
+	listen(s, 5);
+
+	// obsluzime len jedneho klienta
+	ns = accept(s, NULL, NULL);
+
+	// toto je nieco ako uvitaci banner servera
+	// bude to fungovat vdaka tomu, ze klient je schopny citatat aj zo servera, 
+	// aj z terminalu sucasne (v lubovolnom poradi)
+////	strcpy(buff, "Hello from server\nSend a string and I'll send you back the upper case...\n");
+////	write(ns, buff, strlen(buff)+1);
+
+	while ((r = read(ns, buff, 64)) > 0)	// blokuju citanie, cakanie na poziadavku od klienta
+	{
+		buff[r] = 0;			// za poslednym prijatym znakom
+		printf("received: %d bytes, string: %s\n", r, buff);
+		for (i = 0; i < r; i++) buff[i] = toupper(buff[i]);
+		printf("sending back: %s\n", buff);
+		write(ns, buff, r);		// zaslanie odpovede
+	}
+	perror("read");	// ak klient skonci (uzavrie soket), nemusi ist o chybu
+
+	close(ns);
+	close(s);
+	return 0;
+}
+
+/* Part 7 - client mode ========================================================================================
+*/
+
+int launch_as_client() {
+	int s, r;
+	fd_set rs;	// deskriptory pre select()
+	char msg[64] = "hello world!";
+	struct sockaddr_un ad;
+
+	memset(&ad, 0, sizeof(ad));
+	ad.sun_family = AF_LOCAL;
+	strcpy(ad.sun_path, "./sck");
+	s = socket(PF_LOCAL, SOCK_STREAM, 0);
+	if (s == -1)
+	{
+		perror("socket: ");
+		exit(2);
+	}
+
+	printf("running as client\n");
+	connect(s, (struct sockaddr*)&ad, sizeof(ad));	// pripojenie na server
+	FD_ZERO(&rs);
+	FD_SET(0, &rs);
+	FD_SET(s, &rs);
+	// toto umoznuje klientovi cakat na vstup z terminalu (stdin) alebo zo soketu
+	// co je prave pripravene, to sa obsluzi (nezalezi na poradi v akom to pride)
+	while (select(s + 1, &rs, NULL, NULL, NULL) > 0)
+	{
+		if (FD_ISSET(0, &rs))		// je to deskriptor 0 = stdin?
+		{
+			r = read(0, msg, 64);	// precitaj zo stdin (terminal)
+//if (msg[r-1]=='\n') msg[r-1]=0;
+			write(s, msg, r);	// posli serveru (cez soket s)
+		}
+		if (FD_ISSET(s, &rs))		// je to deskriptor s - soket spojenia na server?
+		{
+			r = read(s, msg, 1);	// precitaj zo soketu (od servera)
+			write(1, msg, r);	// zapis na deskriptor 1 = stdout (terminal)
+		}
+		FD_ZERO(&rs);	// connect() mnoziny meni, takze ich treba znova nastavit
+		FD_SET(0, &rs);
+		FD_SET(s, &rs);
+	}
+	perror("select");	// ak server skonci, nemusi ist o chybu
+	close(s);
+	return 0;
+}
+
+/*Part 8 - Standalone mode =================================================================================
+*/
+int launch_as_standalone() {
 	bool exit = false;
 	while (!exit) {
+		cout << make_prompt();
 		string input_line;
 		vector<CommandObject> commands;
 		getline(std::cin, input_line);
@@ -363,4 +549,35 @@ int main(int argc, char* argv[]) {
 			//cout << i << ":\n" << commands[i] << "\n";
 	}
 	return 0;
+}
+
+/*Part 9 - main function ==============================================================================
+*/
+
+int main(int argc, char* argv[]) {
+	cout << "Shell started\n";
+	bool no_error = init_arguments_object(argc, argv); 
+	int success = 0;
+	if (!no_error) {
+		cout << "ERROR\n";
+		return 0;
+	}
+	cout << "MODE: " << shell_arguments.mode << "\n";
+	cout << "PORT: " << shell_arguments.port << "\n";
+	cout << "SOCKET PATH:" << shell_arguments.socket_path << "\n";
+
+	if (shell_arguments.mode == "HELP") {
+		shell_help(argv);
+	}
+	else if (shell_arguments.mode == "STANDALONE" || shell_arguments.mode == "") {
+		success = launch_as_standalone();
+	}
+	else if (shell_arguments.mode == "SERVER") {
+		success = launch_as_server();
+	}
+	else if (shell_arguments.mode == "CLIENT") {
+		success = launch_as_client();
+	}
+	
+	return success;
 }
