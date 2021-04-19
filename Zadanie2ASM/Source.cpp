@@ -16,10 +16,16 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <map>
+
+#include "prompt.h"
 
 #pragma warning(disable:4996)
 using namespace std;
 
+
+string prompt = "";
+bool prompt_changed = false;
 
 /* Part 1: custom shell functions =======================================================================================================
 source: https://brennan.io/2015/01/16/write-a-shell-in-c/  */
@@ -30,27 +36,27 @@ int shell_cd(char** args);
 int shell_help(char** args);
 int shell_exit(char** args);
 int shell_halt(char** args);
+int shell_prompt(char** args);
 
 /*
   List of builtin commands, followed by their corresponding functions.
  */
-string builtin_str[] = {
+
+vector<string> builtin_str = {
   "cd",
   "help",
   "quit",
   "halt",
+  "prompt"
 };
 
-int (*builtin_func[]) (char**) = {
+vector <int (*) (char**)> pointers = {
   &shell_cd,
   &shell_help,
   &shell_exit,
-  &shell_halt
+  &shell_halt,
+  &shell_prompt,
 };
-
-int shell_num_builtins() {
-	return sizeof(builtin_str) / sizeof(char*);
-}
 
 /*
   Builtin function implementations 
@@ -81,12 +87,9 @@ int shell_cd(char** args)
  */
 int shell_help(char** args)
 {
-	int i;
-	printf("Stephen Brennan's shell\n");
-	printf("Type program names and arguments, and hit enter.\n");
-	printf("The following are built in:\n");
-
-	for (i = 0; i < shell_num_builtins(); i++) {
+	cout << "Enter commands as in normal shell\n";
+	cout << "Custom functions are :\n";
+	for (size_t i = 0; i < builtin_str.size(); i++) {
 		cout << builtin_str[i] << "\n";
 	}
 
@@ -101,12 +104,28 @@ int shell_help(char** args)
  */
 int shell_exit(char** args)
 {
+	exit(0);
 	return 0;
 }
 
 int shell_halt(char** args)
 {
 	system("shutdown -P now");
+	return 1;
+}
+
+int shell_prompt(char** args)
+{
+	string input;
+	cout << "Enter letters T,C,U in order which u want the prompt to look like\n";
+	cout << "T stands for time\n";
+	cout << "C stands for computer name\n";
+	cout << "U stands for username\n";
+	cout << "You dont have to use every letter.\n";
+	cout << "Default mode is TCU\n";
+	cin >> input;
+	prompt = make_prompt(input);
+	prompt_changed = true;
 	return 1;
 }
 
@@ -180,24 +199,6 @@ void print_arguments(char** arguments) {
 
 /*Part 3 - my command prompt text ==============================================================================
 */
-
-string make_prompt() {
-	time_t mytime = time(NULL);
-	char* time_str_c = ctime(&mytime);
-	time_str_c[strlen(time_str_c) - 1] = '\0';
-	string time_string{ time_str_c };
-	time_string = time_string.substr(10, 10);
-
-	struct passwd* p = getpwuid(getuid());  
-	string username{ p->pw_name };
-
-	char hostname[15];
-	gethostname(hostname, sizeof(hostname));  
-	string computer_name{ hostname };
-	string output = time_string + " " + username + "@" + hostname + "#";
-
-	return output;
-}
 
 /* Part 4 - CommandObject class, represents 1 line of command entered by user ================================================
 */
@@ -424,12 +425,11 @@ vector<CommandObject> separate_commands(string input_line) {
 */
 
 int execute_commands(CommandObject command) {
-	/*for (i = 0; i < shell_num_builtins(); i++) {
-		if (strcmp(command_as_c, builtin_str[i]) == 0) {
-			return (*builtin_func[i])(arguments_as_c);
+	for (size_t i = 0; i < builtin_str.size(); i++) {
+		if (command.m_command == builtin_str[i]) {
+			return pointers[i](command.get_arguments_as_c());
 		}
-	}*/
-
+	}
 	int pid, wpid, status, file_desc, file_desc2;
 	int pipefd[2];
 	pipe(pipefd);
@@ -610,9 +610,14 @@ int launch_as_client() {
 */
 void launch_as_standalone() {
 	int is_exit = 1;
+	prompt = make_prompt("TCU");
 	while (true) {
 		string input_line;
 		vector<CommandObject> commands;
+		if (prompt_changed == false)
+			cout << prompt;
+		else
+			prompt_changed = false;
 		getline(std::cin, input_line);
 		commands = separate_commands(input_line);
 
