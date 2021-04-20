@@ -16,7 +16,6 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <map>
 
 #include "prompt.h"
 
@@ -197,7 +196,7 @@ void print_arguments(char** arguments) {
 
 }
 
-/*Part 3 - my command prompt text ==============================================================================
+/*Part 3 - Custom prompt - moved to file prompt.h ==============================================================================
 */
 
 /* Part 4 - CommandObject class, represents 1 line of command entered by user ================================================
@@ -501,8 +500,12 @@ int execute_commands(CommandObject command) {
 */
 
 //server from classmate
-/*
-int launch_as_server() {
+
+void launch_as_server() {
+	string socket_path = "./sck";
+	if (!shell_arguments.socket_path.empty())
+		socket_path = shell_arguments.socket_path;
+
 	int i, s, ns, r;
 	fd_set rs;
 	char buff[1000], msg[1000] = "server ready\n";
@@ -510,7 +513,7 @@ int launch_as_server() {
 
 	memset(&ad, 0, sizeof(ad));
 	ad.sun_family = AF_LOCAL;
-	strcpy(ad.sun_path, "./sck");
+	strcpy(ad.sun_path, socket_path.c_str());
 	s = socket(PF_LOCAL, SOCK_STREAM, 0);
 	if (s == -1)
 	{
@@ -535,33 +538,25 @@ int launch_as_server() {
 	{
 		buff[r] = 0;			// za poslednym prijatym znakom
 		printf("received: %d bytes, string: %s\n", r, buff);
-
-		//toto som menil oproti povodnemu
-		vector<CommandObject> commands;
-		commands = createCommandObjects(string{ buff });
-		int exit = execute_line(commands);
-		
-		FILE* stream;
-		stream = fopen("TEMP_TEXT_OUTPUT.txt", "r");
-		int count = fread(&msg, sizeof(char), 1000, stream);
-		fclose(stream);
-
-		// Printing data to check validity
-
-		printf("sending back: %s\n", msg);
-		write(ns, msg, r);		// zaslanie odpovede
+		for (i = 0; i < r; i++) buff[i] = toupper(buff[i]);
+		printf("sending back: %s\n", buff);
+		write(ns, buff, r);		// zaslanie odpovede
 	}
 	perror("read");	// ak klient skonci (uzavrie soket), nemusi ist o chybu
 
 	close(ns);
 	close(s);
-	return 0;
 }
-*/
+
 /* Part 7 - client mode ========================================================================================
 */
-/*
-int launch_as_client() {
+
+void launch_as_client() {
+
+	string socket_path = "./sck";
+	if (!shell_arguments.socket_path.empty())
+		socket_path = shell_arguments.socket_path;
+
 	int s, r;
 	fd_set rs;	// deskriptory pre select()
 	char msg[1000] = "hello world!";
@@ -569,7 +564,7 @@ int launch_as_client() {
 
 	memset(&ad, 0, sizeof(ad));
 	ad.sun_family = AF_LOCAL;
-	strcpy(ad.sun_path, "./sck");
+	strcpy(ad.sun_path, socket_path.c_str());
 	s = socket(PF_LOCAL, SOCK_STREAM, 0);
 	if (s == -1)
 	{
@@ -603,9 +598,8 @@ int launch_as_client() {
 	}
 	perror("select");	// ak server skonci, nemusi ist o chybu
 	close(s);
-	return 0;
 }
-/
+
 /*Part 8 - Standalone mode =================================================================================
 */
 void launch_as_standalone() {
@@ -648,12 +642,12 @@ int main(int argc, char* argv[]) {
 	else if (shell_arguments.mode == "STANDALONE" || shell_arguments.mode == "") {
 		launch_as_standalone();
 	}
-	/*else if (shell_arguments.mode == "SERVER") {
+	else if (shell_arguments.mode == "SERVER") {
 		launch_as_server();
 	}
 	else if (shell_arguments.mode == "CLIENT") {
 		launch_as_client();
-	}*/
+	}
 	cout << "Shell ended\n";
 	return 0;
 }
