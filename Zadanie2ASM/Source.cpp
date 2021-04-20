@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <fstream>
 
 #include "prompt.h"
 
@@ -448,6 +449,10 @@ int execute_commands(CommandObject command) {
 				file_desc = open(command.m_output_file_name.c_str(), O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
 				dup2(file_desc, 1);
 			}
+			/*else {
+				file_desc = open("./TEMP.TXT", O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
+				dup2(file_desc, 1);
+			}*/
 
 			if (command.m_has_input_file) {
 				file_desc2 = open(command.m_input_file_name.c_str(), O_RDONLY);
@@ -456,12 +461,21 @@ int execute_commands(CommandObject command) {
 
 			if (execvp(command.get_second_command_as_c(), command.get_second_arguments_as_c()) == -1)
 				perror("shell");
+
+
+			/*if (command.m_has_input_file)
+				close(file_desc2);
+			close(file_desc);*/
 		}
 		else {
 			if (command.m_has_output_file) {
 				file_desc = open(command.m_output_file_name.c_str(), O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
 				dup2(file_desc, 1);
 			}
+			/*else {
+				file_desc = open("./TEMP.TXT", O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
+				dup2(file_desc, 1);
+			}*/
 
 			if (command.m_has_input_file) {
 				file_desc2 = open(command.m_input_file_name.c_str(), O_RDONLY);
@@ -470,6 +484,10 @@ int execute_commands(CommandObject command) {
 
 			if (execvp(command.get_command_as_c(), command.get_arguments_as_c()) == -1)
 				perror("shell");
+
+			/*if (command.m_has_input_file)
+				close(file_desc2);
+			close(file_desc);*/
 
 		}
 		exit(-1);
@@ -507,8 +525,7 @@ void launch_as_server() {
 		socket_path = shell_arguments.socket_path;
 
 	int i, s, ns, r;
-	fd_set rs;
-	char buff[1000], msg[1000] = "server ready\n";
+	char buff[1000] = "server ready\n";
 	struct sockaddr_un ad;
 
 	memset(&ad, 0, sizeof(ad));
@@ -528,19 +545,32 @@ void launch_as_server() {
 	// obsluzime len jedneho klienta
 	ns = accept(s, NULL, NULL);
 
-	// toto je nieco ako uvitaci banner servera
-	// bude to fungovat vdaka tomu, ze klient je schopny citatat aj zo servera, 
-	// aj z terminalu sucasne (v lubovolnom poradi)
-////	strcpy(buff, "Hello from server\nSend a string and I'll send you back the upper case...\n");
-////	write(ns, buff, strlen(buff)+1);
+	prompt = make_prompt("TCU");
+	write(ns, prompt.c_str(), static_cast<int>(prompt.size()));
 
+	cout << "Mode : SERVER\n";
 	while ((r = read(ns, buff, 64)) > 0)	// blokuju citanie, cakanie na poziadavku od klienta
 	{
 		buff[r] = 0;			// za poslednym prijatym znakom
-		printf("received: %d bytes, string: %s\n", r, buff);
-		for (i = 0; i < r; i++) buff[i] = toupper(buff[i]);
-		printf("sending back: %s\n", buff);
-		write(ns, buff, r);		// zaslanie odpovede
+
+		vector<CommandObject> commands;
+		commands = separate_commands(string{ buff });
+		int is_exit = 1;
+		for (size_t i = 0; i < commands.size(); i++) {
+			int file_desc = open("./TEMP.TXT", O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
+			dup2(file_desc, 1);
+			is_exit = execute_commands(commands[i]);
+			close(file_desc);
+		}
+
+		std::ifstream file("./TEMP.TXT");
+		std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+		if (prompt_changed == false)
+			content += prompt;
+		else
+			prompt_changed = false;
+		write(ns,content.c_str(), static_cast<int>(content.size()));
+		content.clear();
 	}
 	perror("read");	// ak klient skonci (uzavrie soket), nemusi ist o chybu
 
@@ -572,15 +602,17 @@ void launch_as_client() {
 		exit(2);
 	}
 
-	printf("running as client\n");
 	connect(s, (struct sockaddr*)&ad, sizeof(ad));	// pripojenie na server
 	FD_ZERO(&rs);
 	FD_SET(0, &rs);
 	FD_SET(s, &rs);
+	cout << "Mode : CLIENT\n";
 	// toto umoznuje klientovi cakat na vstup z terminalu (stdin) alebo zo soketu
 	// co je prave pripravene, to sa obsluzi (nezalezi na poradi v akom to pride)
+
 	while (select(s + 1, &rs, NULL, NULL, NULL) > 0)
 	{
+
 		if (FD_ISSET(0, &rs))		// je to deskriptor 0 = stdin?
 		{
 			r = read(0, msg, 64);	// precitaj zo stdin (terminal)
@@ -590,7 +622,9 @@ void launch_as_client() {
 		if (FD_ISSET(s, &rs))		// je to deskriptor s - soket spojenia na server?
 		{
 			r = read(s, msg, 1);	// precitaj zo soketu (od servera)
+			msg[r] = 0;
 			write(1, msg, r);	// zapis na deskriptor 1 = stdout (terminal)
+		
 		}
 		FD_ZERO(&rs);	// connect() mnoziny meni, takze ich treba znova nastavit
 		FD_SET(0, &rs);
@@ -605,6 +639,7 @@ void launch_as_client() {
 void launch_as_standalone() {
 	int is_exit = 1;
 	prompt = make_prompt("TCU");
+	cout << "Mode : STANDALONE\n";
 	while (true) {
 		string input_line;
 		vector<CommandObject> commands;
@@ -632,9 +667,9 @@ int main(int argc, char* argv[]) {
 		cout << "ERROR\n";
 		return 0;
 	}
-	cout << "MODE: " << shell_arguments.mode << "\n";
+	/*cout << "MODE: " << shell_arguments.mode << "\n";
 	cout << "PORT: " << shell_arguments.port << "\n";
-	cout << "SOCKET PATH:" << shell_arguments.socket_path << "\n";
+	cout << "SOCKET PATH:" << shell_arguments.socket_path << "\n";*/
 
 	if (shell_arguments.mode == "HELP") {
 		shell_help(argv);
