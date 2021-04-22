@@ -21,6 +21,9 @@
 
 using namespace std;
 
+//get current time, username and computer name
+//combine these elements to a string, based on user prefference
+
 string make_prompt(string mode) {
 	time_t mytime = time(NULL);
 	char* time_str_c = ctime(&mytime);

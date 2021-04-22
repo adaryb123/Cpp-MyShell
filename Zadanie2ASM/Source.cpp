@@ -20,7 +20,6 @@
 
 #include "prompt.h"
 
-#pragma warning(disable:4996)
 using namespace std;
 
 
@@ -28,20 +27,16 @@ string prompt = "";
 bool prompt_changed = false;
 
 /* Part 1: custom shell functions =======================================================================================================
-source: https://brennan.io/2015/01/16/write-a-shell-in-c/  */
-/*
-  Function Declarations for builtin shell commands:
- */
-int shell_cd(char** args);
-int shell_help(char** args);
-int shell_exit(char** args);
-int shell_halt(char** args);
-int shell_prompt(char** args);
-
-/*
-  List of builtin commands, followed by their corresponding functions.
  */
 
+//  Function Declarations for builtin shell commands:
+void shell_cd(char** args);
+void shell_help(char** args);
+void shell_exit(char** args);
+void shell_halt(char** args);
+void shell_prompt(char** args);
+
+ // Vector of builtin commands, followed by their corresponding functions.
 vector<string> builtin_str = {
   "cd",
   "help",
@@ -50,7 +45,7 @@ vector<string> builtin_str = {
   "prompt"
 };
 
-vector <int (*) (char**)> pointers = {
+vector <void (*) (char**)> pointers = {
   &shell_cd,
   &shell_help,
   &shell_exit,
@@ -62,12 +57,8 @@ vector <int (*) (char**)> pointers = {
   Builtin function implementations 
 */
 
-/**
-   @brief Bultin command: change directory.
-   @param args List of args.  args[0] is "cd".  args[1] is the directory.
-   @return Always returns 1, to continue executing.
- */
-int shell_cd(char** args)
+//change directory
+void shell_cd(char** args)
 {
 	if (args[1] == NULL) {
 		fprintf(stderr, "shell: expected argument to \"cd\"\n");
@@ -77,44 +68,35 @@ int shell_cd(char** args)
 			perror("shell");
 		}
 	}
-	return 1;
 }
 
-/**
-   @brief Builtin command: print help.
-   @param args List of args.  Not examined.
-   @return Always returns 1, to continue executing.
- */
-int shell_help(char** args)
+//print help messages
+void shell_help(char** args)
 {
 	cout << "Enter commands as in normal shell\n";
 	cout << "Custom functions are :\n";
 	for (size_t i = 0; i < builtin_str.size(); i++) {
 		cout << builtin_str[i] << "\n";
 	}
-
-	printf("Use the man command for information on other programs.\n");
-	return 1;
+	cout << "Use the man command for information on other programs.\n";
+	cout << "Run the program with argument -c for client mode, or -s for server mode \n";
+	cout << "When running as client or server, use argument -u followed with path to socket, to specify the socket used or communication\n";
 }
 
-/**
-   @brief Builtin command: exit.
-   @param args List of args.  Not examined.
-   @return Always returns 0, to terminate execution.
- */
-int shell_exit(char** args)
+//exit program
+void shell_exit(char** args)
 {
 	exit(0);
-	return 0;
 }
 
-int shell_halt(char** args)
+//turn off computer
+void shell_halt(char** args)
 {
 	system("shutdown -P now");
-	return 1;
 }
 
-int shell_prompt(char** args)
+//modify the custom prompt
+void shell_prompt(char** args)
 {
 	string input;
 	cout << "Enter letters T,C,U in order which u want the prompt to look like\n";
@@ -126,12 +108,12 @@ int shell_prompt(char** args)
 	cin >> input;
 	prompt = make_prompt(input);
 	prompt_changed = true;
-	return 1;
 }
 
-/* Part 2 - shell arguments given at start =====================================================================================================
+/* Part 2 - program arguments given at start =====================================================================================================
 */
 
+//this object will hold the arguments. Since we need to use them at various parts of code, it is stored as global variable.
 class ShellArguments final {
 public:
 	string mode = "";
@@ -194,7 +176,6 @@ void print_arguments(char** arguments) {
 		cout << i << ": " << arguments[i] << "\n";
 		i++;
 	}
-
 }
 
 /*Part 3 - Custom prompt - moved to file prompt.h ==============================================================================
@@ -202,8 +183,13 @@ void print_arguments(char** arguments) {
 
 /* Part 4 - CommandObject class, represents 1 line of command entered by user ================================================
 */
+
+//Line can contain multiple commands separated by ;
+//Each command will be stored in separate object
+
 class CommandObject final {
 public:
+	//construct object from string
 	CommandObject(string command_string) {
 		string word = "";
 		bool word_is_input_file = false, word_is_output_file = false, word_is_first = true, after_pipe = false;
@@ -251,6 +237,7 @@ public:
 		}
 	}
 
+	//these are the properties of command object
 	string m_command = "";
 	vector<string> m_arguments;
 	string m_input_file_name = "";
@@ -262,6 +249,8 @@ public:
 	vector<string> m_second_arguments;
 
 	friend std::ostream& operator<<(std::ostream& lhs, const CommandObject& rhs);
+
+	//the execvp needs arguments in char**, not string, so we must convert  them
 
 	char* get_command_as_c() {
 		char* c_string = new char[m_command.length() + 1];
@@ -308,7 +297,7 @@ public:
 	}
 };
 
-
+//print command object
 std::ostream& operator<<(std::ostream& lhs, const CommandObject& rhs)
 {
 	lhs << "COMMAND: " << '\"' << rhs.m_command << '\"' << "\n";
@@ -329,11 +318,11 @@ std::ostream& operator<<(std::ostream& lhs, const CommandObject& rhs)
 	return lhs;
 }
 
-
+//parse the line and create vector of commmand objects
 vector<CommandObject> separate_commands(string input_line) {
 	vector<char> delimiters = { ' ','\t','\r','\n','\a' };
 	vector<char> special_characters = { '#',';','<','>','|' };
-	char escape_character = '\\';
+	//char escape_character = '\\';
 	string one_command = "";
 	vector<string> all_commands;
 	bool last_was_delimiter = false;
@@ -423,14 +412,14 @@ vector<CommandObject> separate_commands(string input_line) {
 
 /* Part 5 - command execution ========================================================================
 */
-
-int execute_commands(CommandObject command) {
+void execute_commands(CommandObject command) {
+	//check if command is one of the builtin fuctions
 	for (size_t i = 0; i < builtin_str.size(); i++) {
 		if (command.m_command == builtin_str[i]) {
-			return pointers[i](command.get_arguments_as_c());
+			pointers[i](command.get_arguments_as_c());
 		}
 	}
-	int pid, wpid, status, file_desc, file_desc2;
+	int pid, file_desc, file_desc2;
 	int pipefd[2];
 	pipe(pipefd);
 
@@ -446,55 +435,50 @@ int execute_commands(CommandObject command) {
 				perror("closechild");
 
 			if (command.m_has_output_file) {
+				//replace standard output with output file
 				file_desc = open(command.m_output_file_name.c_str(), O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
 				dup2(file_desc, 1);
 			}
-			/*else {
-				file_desc = open("./TEMP.TXT", O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
-				dup2(file_desc, 1);
-			}*/
 
 			if (command.m_has_input_file) {
-				file_desc2 = open(command.m_input_file_name.c_str(), O_RDONLY);
+				//replace standard input with input file, if such file exists
+				if ((file_desc2 = open(command.m_input_file_name.c_str(), O_RDONLY)) < 0){
+					perror("ERROR: File does not exist");
+					return;
+				}
 				dup2(file_desc2, 0);
 			}
 
+			//exectute the part after pipe
 			if (execvp(command.get_second_command_as_c(), command.get_second_arguments_as_c()) == -1)
 				perror("shell");
 
-
-			/*if (command.m_has_input_file)
-				close(file_desc2);
-			close(file_desc);*/
 		}
 		else {
 			if (command.m_has_output_file) {
+				//replace standard output with output file
 				file_desc = open(command.m_output_file_name.c_str(), O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
 				dup2(file_desc, 1);
 			}
-			/*else {
-				file_desc = open("./TEMP.TXT", O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
-				dup2(file_desc, 1);
-			}*/
 
 			if (command.m_has_input_file) {
-				file_desc2 = open(command.m_input_file_name.c_str(), O_RDONLY);
+				//replace standard input with input file, if such file exists
+				if ((file_desc2 = open(command.m_input_file_name.c_str(), O_RDONLY)) < 0) {
+					perror("ERROR: File does not exist");
+					return;
+				}
 				dup2(file_desc2, 0);
 			}
 
+			//execute the command
 			if (execvp(command.get_command_as_c(), command.get_arguments_as_c()) == -1)
 				perror("shell");
-
-			/*if (command.m_has_input_file)
-				close(file_desc2);
-			close(file_desc);*/
-
 		}
 		exit(-1);
-		//return 1;
 	}
 	else if (pid > 0) {
 		// Parent process
+		int status;
 
 		if (command.m_has_pipe) {
 			// replace standard output with output part of pipe
@@ -504,30 +488,35 @@ int execute_commands(CommandObject command) {
 			if (close(pipefd[0]) < 0)
 				perror("closeparent");
 
+			//execute the part before pipe
 			if (execvp(command.get_command_as_c(), command.get_arguments_as_c()) == -1)
 				perror("shell");
 		}
+		//wait for the child process to finish
 		do {
-			wpid = waitpid(pid, &status, WUNTRACED);
+			waitpid(pid, &status, WUNTRACED);
 		} while (!WIFEXITED(status) && !WIFSIGNALED(status));
 	}
-	return 1;
 }
+
 
 /* Part 6 - server mode ==================================================================================
 */
-
-//server from classmate
+//Server will open a socket and wait for client to join. 
+//Server executes the commands that are comming from client, and sends back the output
 
 void launch_as_server() {
+
+	//default socket
 	string socket_path = "./sck";
 	if (!shell_arguments.socket_path.empty())
 		socket_path = shell_arguments.socket_path;
 
-	int i, s, ns, r;
+	int s, ns, r;
 	char buff[1000] = "server ready\n";
 	struct sockaddr_un ad;
 
+	//open socket
 	memset(&ad, 0, sizeof(ad));
 	ad.sun_family = AF_LOCAL;
 	strcpy(ad.sun_path, socket_path.c_str());
@@ -542,27 +531,28 @@ void launch_as_server() {
 	bind(s, (struct sockaddr*)&ad, sizeof(ad));
 	listen(s, 5);
 
-	// obsluzime len jedneho klienta
+	// connect only 1 client
 	ns = accept(s, NULL, NULL);
 
 	prompt = make_prompt("TCU");
 	write(ns, prompt.c_str(), static_cast<int>(prompt.size()));
 
 	cout << "Mode : SERVER\n";
-	while ((r = read(ns, buff, 64)) > 0)	// blokuju citanie, cakanie na poziadavku od klienta
+	while ((r = read(ns, buff, 64)) > 0)	// wait for client input
 	{
-		buff[r] = 0;			// za poslednym prijatym znakom
+		buff[r] = 0;			
 
+		//if the command has no output file, store its ouput in temprorary file, rather than stdout
 		vector<CommandObject> commands;
 		commands = separate_commands(string{ buff });
-		int is_exit = 1;
 		for (size_t i = 0; i < commands.size(); i++) {
 			int file_desc = open("./TEMP.TXT", O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
 			dup2(file_desc, 1);
-			is_exit = execute_commands(commands[i]);
+			execute_commands(commands[i]);
 			close(file_desc);
 		}
 
+		//now load the file to string and send it to client
 		std::ifstream file("./TEMP.TXT");
 		std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 		if (prompt_changed == false)
@@ -572,7 +562,7 @@ void launch_as_server() {
 		write(ns,content.c_str(), static_cast<int>(content.size()));
 		content.clear();
 	}
-	perror("read");	// ak klient skonci (uzavrie soket), nemusi ist o chybu
+	perror("read");
 
 	close(ns);
 	close(s);
@@ -581,17 +571,22 @@ void launch_as_server() {
 /* Part 7 - client mode ========================================================================================
 */
 
+//client will connect to the servers socket
+//client sends user input to server, and prints the output that is comming from the server
+
 void launch_as_client() {
 
+	//default socket
 	string socket_path = "./sck";
 	if (!shell_arguments.socket_path.empty())
 		socket_path = shell_arguments.socket_path;
 
 	int s, r;
-	fd_set rs;	// deskriptory pre select()
+	fd_set rs;
 	char msg[1000] = "hello world!";
 	struct sockaddr_un ad;
 
+	//create socket
 	memset(&ad, 0, sizeof(ad));
 	ad.sun_family = AF_LOCAL;
 	strcpy(ad.sun_path, socket_path.c_str());
@@ -602,42 +597,44 @@ void launch_as_client() {
 		exit(2);
 	}
 
-	connect(s, (struct sockaddr*)&ad, sizeof(ad));	// pripojenie na server
+	//connect to server
+	connect(s, (struct sockaddr*)&ad, sizeof(ad));	
 	FD_ZERO(&rs);
 	FD_SET(0, &rs);
 	FD_SET(s, &rs);
 	cout << "Mode : CLIENT\n";
-	// toto umoznuje klientovi cakat na vstup z terminalu (stdin) alebo zo soketu
-	// co je prave pripravene, to sa obsluzi (nezalezi na poradi v akom to pride)
 
 	while (select(s + 1, &rs, NULL, NULL, NULL) > 0)
 	{
 
-		if (FD_ISSET(0, &rs))		// je to deskriptor 0 = stdin?
+		//read from stdin, send to server
+		if (FD_ISSET(0, &rs))		
 		{
-			r = read(0, msg, 64);	// precitaj zo stdin (terminal)
-//if (msg[r-1]=='\n') msg[r-1]=0;
-			write(s, msg, r);	// posli serveru (cez soket s)
+			r = read(0, msg, 1000);
+			write(s, msg, r);	
+			if (strcmp(msg, "quit") == 0)
+				exit(0);
 		}
-		if (FD_ISSET(s, &rs))		// je to deskriptor s - soket spojenia na server?
+		//read from socket, print to stdout
+		if (FD_ISSET(s, &rs))		
 		{
-			r = read(s, msg, 1);	// precitaj zo soketu (od servera)
+			r = read(s, msg, 1);	
 			msg[r] = 0;
-			write(1, msg, r);	// zapis na deskriptor 1 = stdout (terminal)
+			write(1, msg, r);	
 		
 		}
-		FD_ZERO(&rs);	// connect() mnoziny meni, takze ich treba znova nastavit
+		FD_ZERO(&rs);	
 		FD_SET(0, &rs);
 		FD_SET(s, &rs);
 	}
-	perror("select");	// ak server skonci, nemusi ist o chybu
+	perror("select");	
 	close(s);
 }
 
 /*Part 8 - Standalone mode =================================================================================
 */
+//read commands from stdin and print output to stdout
 void launch_as_standalone() {
-	int is_exit = 1;
 	prompt = make_prompt("TCU");
 	cout << "Mode : STANDALONE\n";
 	while (true) {
@@ -651,7 +648,7 @@ void launch_as_standalone() {
 		commands = separate_commands(input_line);
 
 		for (size_t i = 0; i < commands.size(); i++) {
-			is_exit = execute_commands(commands[i]);
+			execute_commands(commands[i]);
 		}
 	}
 }
@@ -659,18 +656,14 @@ void launch_as_standalone() {
 /*Part 9 - main function ==============================================================================
 */
 
+//launch the mode selected in arguments
 int main(int argc, char* argv[]) {
 	cout << "Shell started\n";
 	bool no_error = init_arguments_object(argc, argv); 
-	int success = 0;
 	if (!no_error) {
 		cout << "ERROR\n";
 		return 0;
 	}
-	/*cout << "MODE: " << shell_arguments.mode << "\n";
-	cout << "PORT: " << shell_arguments.port << "\n";
-	cout << "SOCKET PATH:" << shell_arguments.socket_path << "\n";*/
-
 	if (shell_arguments.mode == "HELP") {
 		shell_help(argv);
 	}
