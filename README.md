@@ -3,7 +3,7 @@
 The program acts like a linux shell. It can execute basic shell commands using library functions fork() and exec(), as well as custom-made functions.
 
 
-Supported special characters: "<" , ">" , "\" , ";" , "|", "#" . 
+Supported special characters: "<" , ">" , "\\" , ";" , "|", "#" . 
 
 
 Custom made function "prompt" lets user modify the command prompt.
