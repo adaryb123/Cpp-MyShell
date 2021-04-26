@@ -20,7 +20,7 @@ Otherwise, default socket "./sck" is used.
 
 End the program with "quit" command.
 
-##Hovewer
+## However
 
 Pipes "|" only work in standalone mode, and can only be used once cause they shutdown the program after they are executed, for some reason.
 
