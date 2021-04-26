@@ -15,8 +15,8 @@ Run the program with argument "-a" or with no argument, to run in standalone mod
 Run the program with argument "-s" to run in server mode, and with argument "-c" to run in client mode.
 (server recieves the commands from client and sends the output back to client, via local sockets)
 
-When running as client or server, add argument "-u" followed with path to local socket, to specify the socket used for comunnication. 
-Otherwise, default socket "./sck" is used.
+When running as client or server, add argument "-u" followed with path to local socket, to specify the socket used for communication. 
+Otherwise default socket "./sck" is used.
 
 End the program with "quit" command.
 
